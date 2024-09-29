@@ -1,22 +1,11 @@
-from typing import List, Tuple
+# https://contest.yandex.ru/contest/22449/problems/?nc=AEHrPb2i
+def solution(a: int, b: int, c: int) -> str:
+    if a % 2 == 0 and b % 2 == 0 and c % 2 == 0:
+        return 'WIN'
+    elif a % 2 != 0 and b % 2 != 0 and c % 2 != 0:
+        return 'WIN'
+    return 'FAIL'
 
 
-# https://contest.yandex.ru/contest/26365/problems/B/
-
-def zipper(a: List[int], b: List[int]) -> List[int]:
-    arr = list()
-    for i, num in enumerate(a):
-        arr.append(num)
-        arr.append(b[i])
-    return arr
-
-
-def read_input() -> Tuple[List[int], List[int]]:
-    n = int(input())
-    a = list(map(int, input().strip().split()))
-    b = list(map(int, input().strip().split()))
-    return a, b
-
-
-a, b = read_input()
-print(" ".join(map(str, zipper(a, b))))
+a, b, c = map(int, input().strip().split())
+print(solution(a, b, c))

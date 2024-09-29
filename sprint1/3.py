@@ -1,27 +1,29 @@
-# https://contest.yandex.ru/contest/26365/problems/D/
-
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
-def two_sum(arr: List[int], target_sum: int) -> Optional[Tuple[int, int]]:
-    for i in range(len(arr)):
-        for j in range (i + 1, len(arr)):
-            if arr[i] + arr[j] == target_sum:
-                return arr[i], arr[j]
+def get_neighbours(matrix: List[List[int]], row: int, col: int) -> List[int]:
+    neighbours = []
+    if row > 0:
+        neighbours.append(matrix[row - 1][col])
+    if len(matrix) - 1 > row:
+        neighbours.append(matrix[row + 1][col])
+    if col > 0:
+        neighbours.append(matrix[row][col - 1])
+    if len(matrix[row]) - 1 > col:
+        neighbours.append(matrix[row][col + 1])
+    return sorted(neighbours)
 
-def read_input() -> Tuple[List[int], int]:
+
+def read_input() -> Tuple[List[List[int]], int, int]:
     n = int(input())
-    arr = list(map(int, input().strip().split()))
-    target_sum = int(input())
-    return arr, target_sum
+    m = int(input())
+    matrix = []
+    for i in range(n):
+        matrix.append(list(map(int, input().strip().split())))
+    row = int(input())
+    col = int(input())
+    return matrix, row, col
 
 
-def print_result(result: Optional[Tuple[int, int]]) -> None:
-    if result is None:
-        print(None)
-    else:
-        print(" ".join(map(str, result)))
-
-
-arr, target_sum = read_input()
-print_result(two_sum(arr, target_sum))
+matrix, row, col = read_input()
+print(" ".join(map(str, get_neighbours(matrix, row, col))))
