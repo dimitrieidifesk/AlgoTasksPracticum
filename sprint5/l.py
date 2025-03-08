@@ -1,31 +1,29 @@
-def sift_down(heap, index):
-    n = len(heap) - 1
-    current = index
-
-    while True:
-        left = 2 * current
-        right = 2 * current + 1
-        largest = current
-
-        if left <= n and heap[left] > heap[largest]:
-            largest = left
-
-        if right <= n and heap[right] > heap[largest]:
-            largest = right
-
-        if largest == current:
-            break
-
-        heap[current], heap[largest] = heap[largest], heap[current]
-        current = largest
-
-    return current
+class Node:
+    def __init__(self, value, left=None, right=None):
+        self.value = value
+        self.right = right
+        self.left = left
 
 
-def test():
-    sample = [-1, 12, 1, 8, 3, 4, 7]
-    assert sift_down(sample, 2) == 5
+def build_tree(node_value):
+    print(node_value)
+    if node_value <= 0:
+        return
+    if node_value >= n:
+        return
+    node = Node(node_value, left=build_tree(node_value-1), right=build_tree(node_value+1))
+    return node
 
 
-if __name__ == '__main__':
-    test()
+
+def main(n):
+    cnt = 0
+    for i in range(1, n):
+        tree = build_tree(i)
+        if tree:
+            cnt += 1
+    return cnt
+
+
+n = int(input())
+print(main(n))

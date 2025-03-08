@@ -4,18 +4,15 @@ import random
 from typing import Tuple, Dict, List
 import traceback
 
-NUM_TURTLES = 6
+NUM_TURTLES = 5
 DISTANCE = 70
 DEFAULT_SPEED = 1
 TURTLE_COLORS = ["black", "white", "blue"]
 
-
-# Прослушивание общего канала связи, через который передается сообщение о текущей целевой точки
-# Каждая черепашка двигается к целевой точке самостоятельно, но надо реализовать проверку расстояния до все других черепашек во всех направлениях
-# и разрешить конфликты столкновений. (Установкой вторичной целевой точки на +N градусов на несколько пикселей в сторону от ближайшей черепашки)
-# Вся реализация только через пулл сообщений
-# Выстроение в ряд обязательно
-
+# Хранение заданий для черепашек (Обход территории, возможно несколько территорий и последовательный обход каждой)
+# Способ обмена сообщений для заданий
+# **Обход территории реализовать не строем, а максимально эффективно использовав всех черепашек
+# У группы роботов есть общая задача (осмотреть территорию/двигаться к следующей территории) и задача в контексте текущей общей задачи
 
 class Message:
     def __init__(self, id: int, cur_pos_x: float, cur_pos_y: float, cur_target: Tuple[float], direction: float):
@@ -41,8 +38,29 @@ class TurtleRobot(turtle.Turtle):
         self.speed_value = speed
         self.target_point = cur_target_point
         self.pencolor(color)
+        self.messages_cache = {}
+        self.dead_turtles_last_msgs = []
 
-    def move(self):
+    def get_distance(self, pos_y: float, pos_x: float):
+        dx = self.xcor() - pos_x
+        dy = self.ycor() - pos_y
+        return (dx ** 2 + dy ** 2) ** 0.5
+
+    def move(self, messages: List['Message']):
+        # Проверка на столкновения
+        messages.extend(self.dead_turtles_last_msgs)
+        for msg in messages:
+            if msg.id != self.id:
+                distance = self.get_distance(msg.cur_pos_y, msg.cur_pos_x)
+                if distance < DISTANCE // 2:
+                    avoidance_angle = math.degrees(math.atan2(msg.cur_pos_y - self.ycor(),
+                                                              msg.cur_pos_x - self.xcor()))
+                    self.change_direction(avoidance_angle + 90)
+                    self.speed_value = max(1, self.speed_value - 5)
+                    break
+                else:
+                    self.speed_value = DEFAULT_SPEED
+
         radians = math.radians(self.direction)
         dx = self.speed_value * math.cos(radians)
         dy = self.speed_value * math.sin(radians)
@@ -53,8 +71,12 @@ class TurtleRobot(turtle.Turtle):
         self.setheading(new_direction)
 
     def handle_messages(self, messages: List[Message]) -> Dict:
+        if len(self.messages_cache) != len(messages):
+            for cached_m in self.messages_cache:
+                if cached_m.id not in [m.id for m in messages]:
+                    self.dead_turtles_last_msgs.append(cached_m)
+        self.messages_cache = messages
         if self.id == messages[0].id:
-            # Если текущая черепашка - головная
             tp = self.get_target_point_from_frame()
             if tp:
                 self.setheading(math.degrees(math.atan2(tp[1] - self.ycor(), tp[0] - self.xcor())))
@@ -64,7 +86,7 @@ class TurtleRobot(turtle.Turtle):
                 dy = self.target_point[1] - self.ycor()
                 self.change_direction(math.degrees(math.atan2(dy, dx)))
         else:
-            msg_prev = None # Сообщение от впереди идущей черепашки
+            msg_prev = None
             for i in range(1, len(messages)):
                 if self.id == messages[i].id:
                     msg_prev = messages[i - 1]
@@ -150,13 +172,13 @@ def main():
     count = 0
     while True:
         count += 1
-        if count % 1000 == 0:
-            rand_t = random.randint(0, len(turtles) - 1)
-            turtles[rand_t].color('red')
-            del turtles[rand_t]
+        # if count % 1000 == 0:
+        #     rand_t = random.randint(0, len(turtles) - 1)
+        #     turtles[rand_t].color('red')
+        #     del turtles[rand_t]
         m = [t.handle_messages(m) for t in turtles]
         for t in turtles:
-            t.move()
+            t.move(m)
         pond.update()
 
 

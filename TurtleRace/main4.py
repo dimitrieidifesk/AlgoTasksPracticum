@@ -5,9 +5,10 @@ from typing import Tuple, Dict, List
 import traceback
 
 NUM_TURTLES = 6
-DISTANCE = 70
+DISTANCE = 60
 DEFAULT_SPEED = 1
 TURTLE_COLORS = ["black", "white", "blue"]
+AVOID_ANGLE = 90
 
 
 # Прослушивание общего канала связи, через который передается сообщение о текущей целевой точки
@@ -41,6 +42,8 @@ class TurtleRobot(turtle.Turtle):
         self.speed_value = speed
         self.target_point = cur_target_point
         self.pencolor(color)
+        self.messages_cache = {}
+        self.dead_turtles_last_msgs = []
 
     def move(self):
         radians = math.radians(self.direction)
@@ -52,9 +55,56 @@ class TurtleRobot(turtle.Turtle):
         self.direction = new_direction
         self.setheading(new_direction)
 
+    def avoiding_obstacles(self, new_d, closest_distance, direction_to_obstacle):
+        if closest_distance < DISTANCE:
+            obstacle_angle = math.degrees(math.atan2(direction_to_obstacle.cur_pos_y - self.ycor(),
+                                                     direction_to_obstacle.cur_pos_x - self.xcor()))
+            angle_diff = (obstacle_angle - self.direction) % 360
+
+            distance_ratio = max(0, 1 - (closest_distance / DISTANCE))
+            adaptive_angle = AVOID_ANGLE * distance_ratio * 3
+
+            if angle_diff <= 30 or angle_diff > 330:  # Преграда спереди
+                self.change_direction(new_d + adaptive_angle)  # Повернуть вбок
+            elif 330 >= angle_diff > 260:  # Преграда справа
+                self.change_direction(new_d - adaptive_angle)  # Повернуть влево
+            elif 80 >= angle_diff > 30:  # Преграда слева
+                self.change_direction(new_d - adaptive_angle)  # Повернуть вправо
+            else:  # Преграда сзади
+                self.change_direction(new_d)
+        else:
+            self.change_direction(new_d)
+
     def handle_messages(self, messages: List[Message]) -> Dict:
+        msg_prev = None  # Сообщение от впереди идущего
+        closest_distance = float('inf')
+        direction_to_obstacle = None
+        for i, msg in enumerate(messages):
+            if msg.id == self.id:
+                msg_prev = messages[i - 1]
+            else:
+                distance = self.distance_to(msg)
+                if distance < closest_distance:
+                    closest_distance = distance
+                    direction_to_obstacle = msg
+                    if closest_distance < DISTANCE:
+                        print(f"[{self.id}] d to alive t {msg.id} = {int(closest_distance)}")
+
+        if len(self.messages_cache) != len(messages):
+            for cached_m in self.messages_cache:
+                if cached_m.id not in [m.id for m in messages]:
+                    self.dead_turtles_last_msgs.append(cached_m)
+
+        for i, msg in enumerate(self.dead_turtles_last_msgs):
+            distance = self.distance_to(msg)
+            if distance < closest_distance:
+                closest_distance = distance
+                if closest_distance < DISTANCE:
+                    print(f"d to dead t {msg.id} = {closest_distance}")
+
+        self.messages_cache = messages
+
         if self.id == messages[0].id:
-            # Если текущая черепашка - головная
             tp = self.get_target_point_from_frame()
             if tp:
                 self.setheading(math.degrees(math.atan2(tp[1] - self.ycor(), tp[0] - self.xcor())))
@@ -62,21 +112,21 @@ class TurtleRobot(turtle.Turtle):
             else:
                 dx = self.target_point[0] - self.xcor()
                 dy = self.target_point[1] - self.ycor()
-                self.change_direction(math.degrees(math.atan2(dy, dx)))
-        else:
-            msg_prev = None # Сообщение от впереди идущей черепашки
-            for i in range(1, len(messages)):
-                if self.id == messages[i].id:
-                    msg_prev = messages[i - 1]
-
-            if msg_prev:
-                angle = msg_prev.direction
-                t_x = msg_prev.cur_pos_x - DISTANCE * math.cos(math.radians(angle))
-                t_y = msg_prev.cur_pos_y - DISTANCE * math.sin(math.radians(angle))
-                new_d = math.degrees(math.atan2(t_y - self.ycor(), t_x - self.xcor()))
-                self.change_direction(new_d)
-                self.target_point = msg_prev.cur_target if self.target_point != msg_prev.cur_target else self.target_point
+                new_d = math.degrees(math.atan2(dy, dx))
+                # self.change_direction(new_d + AVOID_ANGLE if closest_distance < DISTANCE else new_d)
+                self.avoiding_obstacles(new_d, closest_distance, direction_to_obstacle)
+        elif msg_prev:
+            angle = msg_prev.direction
+            t_x = msg_prev.cur_pos_x - DISTANCE * math.cos(math.radians(angle))
+            t_y = msg_prev.cur_pos_y - DISTANCE * math.sin(math.radians(angle))
+            new_d = math.degrees(math.atan2(t_y - self.ycor(), t_x - self.xcor()))
+            # self.change_direction(new_d + AVOID_ANGLE if closest_distance < DISTANCE else new_d)
+            self.avoiding_obstacles(new_d, closest_distance, direction_to_obstacle)
+            self.target_point = msg_prev.cur_target if self.target_point != msg_prev.cur_target else self.target_point
         return Message(self.id, self.xcor(), self.ycor(), self.target_point, self.direction)
+
+    def distance_to(self, message: Message) -> float:
+        return math.sqrt((self.xcor() - message.cur_pos_x) ** 2 + (self.ycor() - message.cur_pos_y) ** 2)
 
     def get_target_point_from_frame(self):
         current_x = self.xcor()

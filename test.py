@@ -1,58 +1,115 @@
-# import requests
-#
-# url = 'https://shafklj.ru/wh_bill/v1/transaction/wh/'
-# headers = {
-#     'Content-Type': 'application/json'
-# }
-# json_body = {
-#     "id": ["20241123172602567"],
-#     "sum": ["0.00"],
-#     "orderid": ["43024149"],
-#     "key": ["5723e592473147b0af1c32d6a50cc09e"],
-#     "pk_hostname": ["https: //222330801184.server.paykeeper.ru"],
-#     "ps_id": ["94"],
-#     "client_email": ["LS 43024149"],
-#     "client_phone": ["2094508856"],
-#     "service_name": ["Услуга"],
-#     "fop_receipt_key": ["Uo9AFN_J"],
-#     "obtain_datetime": ["2024-10-29 16:08:59"]
-# }
-# response = requests.post(url, json=json_body, headers=headers, verify=False)
-# print(response.status_code)
-# resp = response.json()
-# print(resp)
+import re
+from pyrogram import Client, filters, types
+from pyrogram.enums import UserStatus
+import datetime
+from loguru import logger
+import asyncio
+import threading
+
+api_id = 25115216
+api_hash = 'bcb14ca55030e1d259d92f8de070240d'
+
+# Глобальные переменные
+session_name = "me_client"
+me = 1499198721
+chat_from = -1002022757177
+chat_to = -1002294341866
+
+# Глобальная переменная для отслеживания времени последнего сообщения
+last_message_time = None
+
+# Создаем единственный экземпляр клиента
+app = Client(name=session_name, api_id=api_id, api_hash=api_hash)
 
 
-import phonenumbers
-from phonenumbers import carrier, geocoder
+@app.on_message(filters.chat(chat_from) | filters.chat(me))
+async def my_handler(client: Client, message: types.Message):
+    global last_message_time
+    last_message_time = datetime.datetime.now()  # Обновляем время при получении нового сообщения
 
-def validate_phone_number(phone, region='RU'):
+    if 'BURNED LP' not in message.text:
+        return
+
     try:
-        # Проверяем, начинается ли номер с '7' или '8' и добавляем +7, если это так
-        if phone.startswith('8') or phone.startswith('7'):
-            phone = '+7' + phone[1:]
+        if message.from_user.id != me and message.message_thread_id != 6062:
+            return
+    except:
+        return
 
-        # Пытаемся создать объект PhoneNumber
-        parsed_phone = phonenumbers.parse(phone, region)
+    post_text = message.text
+    top_5_match = re.search(r"Top 5:\s*([\d.]+)%", post_text)
+    market_cap_match = re.search(r"Market Cap:\s*([\d.]+)k", post_text)
+    mint_match = re.search(r"Mint:\s*([a-zA-Z0-9]+)", post_text)
 
-        # Проверяем, является ли номер действительным
-        return phonenumbers.is_valid_number(parsed_phone)
-    except phonenumbers.NumberParseException:
-        return False
+    logger.info(f"{message.id} received")
 
-# Примеры использования
-phone_numbers = [
-    "+1-234-567-8901",
-    "234-567-8901",
-    "(234) 567-8901",
-    "+91 98765 43210",
-    "+7 (969) 722-40-20",
-    "79697224020",
-    "89697224020",
-    "7 (969) 722 4020",
-    "1234567",    # Ошибочный номер
-    "abcd1234",   # Ошибочный номер
-]
+    if not (top_5_match and market_cap_match and mint_match):
+        return
 
-for number in phone_numbers:
-    print(f"{number}: {validate_phone_number(number)}")
+    # Преобразовать извлеченные значения в числа
+    top_5_percent = float(top_5_match.group(1))
+    market_cap_k = float(market_cap_match.group(1))
+    mint_address = mint_match.group(1)
+
+    # Проверка условий
+    if (
+            5 <= top_5_percent <= 29 and
+            25.0 <= market_cap_k <= 600.0 and
+            mint_address.endswith("pump")
+    ):
+        logger.info(f"{message.id} forwarded")
+        await client.forward_messages(chat_to, message.chat.id, message_ids=message.id)
+
+
+async def restart_client():
+    """Асинхронная функция для перезапуска клиента"""
+    global app
+    try:
+        logger.warning("Restarting client...")
+        await app.stop()  # Останавливаем текущий клиент (используем await)
+        await asyncio.sleep(2)  # Добавляем небольшую задержку перед перезапуском
+        await app.start()  # Запускаем клиента снова (используем await)
+        logger.info("Client restarted successfully.")
+    except Exception as e:
+        logger.error(f"Error during client restart: {e}")
+
+
+def check_inactivity():
+    """Функция для проверки неактивности"""
+    global last_message_time
+    loop = asyncio.get_event_loop()  # Получаем event loop для выполнения асинхронных задач
+    while True:
+        if last_message_time:
+            elapsed_time = (datetime.datetime.now() - last_message_time).total_seconds()
+            if elapsed_time > 60:
+                logger.warning("No messages for 60 seconds. Restarting client...")
+
+                # Выполняем асинхронную функцию перезапуска через event loop
+                loop.run_until_complete(restart_client())
+        time.sleep(5)  # Проверяем каждые 5 секунд
+
+
+@logger.catch
+def main() -> None:
+    """
+    Функция запускает бота
+    """
+    logger.add(
+        'logs.log',
+        level='DEBUG',
+        format="{time} {level} {message}",
+        rotation='1 week',
+        retention='1 week',
+        compression='zip'
+    )
+
+    # Запускаем поток для проверки неактивности
+    inactivity_thread = threading.Thread(target=check_inactivity, daemon=True)
+    inactivity_thread.start()
+
+    # Первичный запуск клиента
+    app.run()
+
+
+if name == 'main':
+    main()
